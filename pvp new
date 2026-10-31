@@ -229,7 +229,7 @@ local function isValidStopCondition()
     return (tool and tool.Name == "Shark Anchor" and sharkZActive)
         or (vActive)
         or (tool and tool.Name == "Cursed Dual Katana" and cursedZActive)
-end -- ==================== BOOSTS ====================
+end-- ==================== BOOSTS ====================
 local multiEnabled = false; local multiPower = 400; local multiDuration = 0.9
 local multiCharging = false; local multiChargeStart = 0; local multiRequiredCharge = 1.0
 local diamondEnabled = false; local diamondPower = 250; local diamondDuration = 0.3
@@ -518,7 +518,7 @@ local function StartNoClip()
 end
 local function StopNoClip()
     if flySettings.nocore then flySettings.nocore:Disconnect(); flySettings.nocore = nil end
-end -- ==================== SPEED HACK ====================
+end-- ==================== SPEED HACK ====================
 local function applySpeedHack()
     local char = lp.Character; local hrp = char and char:FindFirstChild("HumanoidRootPart"); local hum = char and char:FindFirstChildOfClass("Humanoid")
     if not hrp or not hum then return end
@@ -834,8 +834,417 @@ local DashGlitch = (function()
             else hum.WalkSpeed = 16; hum.PlatformStand = false end
         elseif hum then hum.WalkSpeed = 16; hum.PlatformStand = false end
     end)
-    return modules 
-end)() -- ==================== SILENT AIM MODULE ====================
+    return module
+end)()-- ==================== MISC ====================
+local fontChangerEnabled = false
+local fontPreset = "GothamSsm"
+local updatedFonts = {}
+local fontConn = nil
+local antiMoverEnabled = false
+local antiMoverConnection = nil
+local unbreakableEnabled = false
+local unbreakableConnection = nil
+
+local function enableFonts()
+    if fontConn then fontConn:Disconnect() end
+    fontConn = RunService.Heartbeat:Connect(function()
+        local guiList = { lp:FindFirstChild("PlayerGui"), game:GetService("CoreGui") }
+        for _, gui in pairs(guiList) do
+            if gui then
+                for _, obj in pairs(gui:GetDescendants()) do
+                    if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+                        if obj.Font ~= Enum.Font[fontPreset] then obj.Font = Enum.Font[fontPreset]; table.insert(updatedFonts, obj) end
+                    end
+                end
+            end
+        end
+    end)
+end
+local function disableFonts()
+    if fontConn then fontConn:Disconnect(); fontConn = nil end
+    for _, obj in pairs(updatedFonts) do pcall(function() obj.Font = Enum.Font.SourceSans end) end
+    updatedFonts = {}
+end
+local function loadCustomFont(fileName) if fileName == "None" then return end end
+
+-- No GFX
+local noGfxMode = "Off"
+local noGfxConnections = {}
+local noGfxModifiedObjects = {}
+local hotbarIconsOriginals = {}
+local function restoreNoGfx()
+    for obj, data in pairs(noGfxModifiedObjects) do
+        pcall(function()
+            if data.Texture ~= nil then obj.Texture = data.Texture end
+            if data.Enabled ~= nil then obj.Enabled = data.Enabled end
+        end)
+    end
+    noGfxModifiedObjects = {}
+    for iconLabel, oldImage in pairs(hotbarIconsOriginals) do pcall(function() iconLabel.Image = oldImage or "" end) end
+    hotbarIconsOriginals = {}
+    if noGfxConnections.DescendantAdded then noGfxConnections.DescendantAdded:Disconnect(); noGfxConnections.DescendantAdded = nil end
+    if noGfxConnections.HotbarChildAdded then noGfxConnections.HotbarChildAdded:Disconnect(); noGfxConnections.HotbarChildAdded = nil end
+end
+local function processObject(inst)
+    local cn = inst.ClassName
+    if cn == "Beam" or cn == "Trail" then
+        if not noGfxModifiedObjects[inst] then noGfxModifiedObjects[inst] = {Texture = inst.Texture}; inst.Texture = "rbxassetid://84308155859778" end
+    elseif cn == "ParticleEmitter" then
+        if not noGfxModifiedObjects[inst] then noGfxModifiedObjects[inst] = {Texture = inst.Texture, Enabled = inst.Enabled}; inst.Texture = ""; inst.Enabled = false end
+    end
+end
+local function startNoGfxV1()
+    restoreNoGfx()
+    task.spawn(function()
+        local d = workspace:GetDescendants()
+        for i = 1, #d do
+            local inst = d[i]
+            if not inst:IsA("Terrain") and not inst:IsA("Camera") then processObject(inst) end
+            if i % 100 == 0 then RunService.Heartbeat:Wait() end
+        end
+    end)
+    noGfxConnections.DescendantAdded = workspace.DescendantAdded:Connect(processObject)
+end
+local function startNoGfxV2()
+    restoreNoGfx()
+    task.spawn(function()
+        local d = workspace:GetDescendants()
+        for i = 1, #d do
+            local inst = d[i]
+            if not inst:IsA("Terrain") and not inst:IsA("Camera") then processObject(inst) end
+            if i % 100 == 0 then RunService.Heartbeat:Wait() end
+        end
+    end)
+    noGfxConnections.DescendantAdded = workspace.DescendantAdded:Connect(processObject)
+    task.spawn(function()
+        local pg = lp:WaitForChild("PlayerGui"); local bp = pg:WaitForChild("Backpack"); local hc = bp:WaitForChild("Hotbar"):WaitForChild("Container")
+        local function u()
+            for _, slot in ipairs(hc:GetChildren()) do
+                local il = slot:FindFirstChild("Icon") or slot:FindFirstChild("Image") or slot:FindFirstChildOfClass("ImageLabel")
+                if il and il:IsA("ImageLabel") then
+                    if not hotbarIconsOriginals[il] then hotbarIconsOriginals[il] = il.Image end
+                    il.Image = "rbxassetid://84308155859778"; il.ImageColor3 = Color3.new(1,1,1)
+                end
+            end
+        end
+        u(); noGfxConnections.HotbarChildAdded = hc.ChildAdded:Connect(function() task.defer(u) end)
+    end)
+end
+local function stopNoGfx() restoreNoGfx() end
+local function setNoGfxMode(mode)
+    if mode == noGfxMode then return end
+    noGfxMode = mode; stopNoGfx()
+    if mode == "V1" then startNoGfxV1() elseif mode == "V2" then startNoGfxV2() end
+end
+
+-- Delete Ship
+local deleteShipActive = false; local deleteShipRunning = false
+local function deleteShipStructure()
+    if not deleteShipActive then return end
+    task.spawn(function()
+        local sn = {"CursedShip","Cursed Ship","Ship"}; local en = {"Wall","Floor","Ceiling","Base","Hull","Window","DoorFrame"}
+        for _, obj in pairs(workspace:GetDescendants()) do
+            for _, sName in ipairs(sn) do
+                if obj.Name:find(sName) and (obj:IsA("Model") or obj:IsA("Folder")) then
+                    for _, child in pairs(obj:GetDescendants()) do
+                        if child:IsA("BasePart") and not child.Parent:FindFirstChild("Humanoid") then
+                            local ext = false
+                            for _, e in ipairs(en) do if child.Name:find(e) then ext = true; break end end
+                            if not ext then child:Destroy() end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+local function startDeleteShipLoop()
+    if deleteShipRunning then return end
+    deleteShipRunning = true
+    task.spawn(function() while deleteShipActive do deleteShipStructure(); task.wait(3) end; deleteShipRunning = false end)
+end
+
+-- Walk on Water
+local WalkOnWaterEnabled = false; local waterPart = nil
+task.spawn(function()
+    local function getWP()
+        if not waterPart or not waterPart.Parent then
+            waterPart = Instance.new("Part"); waterPart.Size = Vector3.new(200,1,200); waterPart.Transparency = 1; waterPart.Anchored = true; waterPart.CanCollide = false; waterPart.Name = "SacredWaterPlatform"; waterPart.Parent = workspace
+        end
+        return waterPart
+    end
+    while true do
+        task.wait(0.15)
+        if WalkOnWaterEnabled then
+            local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart"); local wp = getWP()
+            if hrp and hrp.Position.Y >= 9.5 then wp.Position = Vector3.new(hrp.Position.X, 9.2, hrp.Position.Z); wp.CanCollide = true
+            else wp.CanCollide = false end
+        elseif waterPart and waterPart.Parent then waterPart.CanCollide = false end
+    end
+end)
+
+-- Anti Lava
+local antiLavaActive = false; local antiLavaConnection = nil
+local function startAntiLava()
+    if antiLavaConnection then antiLavaConnection:Disconnect() end
+    local t = 0
+    antiLavaConnection = RunService.Stepped:Connect(function(_, dt)
+        t = t + dt; if t < 0.2 then return end; t = 0
+        local char = lp.Character; if not (char and antiLavaActive) then return end
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Name ~= "Torso" and part.Name ~= "UpperTorso" and part.Name ~= "LowerTorso" and part.Name ~= "Head" then part.CanTouch = false end
+        end
+    end)
+end
+local function stopAntiLava() if antiLavaConnection then antiLavaConnection:Disconnect(); antiLavaConnection = nil end end
+
+-- Big Skin
+local bigSkinBugEnabled = false; local bigSkinBugOriginal = {}; local bigSkinBugConnections = {}
+local function applyBigSkin(char)
+    local data = bigSkinBugOriginal[char]; if not data then return end
+    for item, saved in pairs(data.accessories) do item.Parent = nil end
+    for part, saved in pairs(data.parts) do
+        part.Color = Color3.fromRGB(128,128,128); part.Material = Enum.Material.SmoothPlastic; part.CanCollide = true
+        if part:IsA("MeshPart") then part.TextureID = "" end
+        local nl = part.Name:lower()
+        if nl:match("torso") then part.Size = Vector3.new(5.6,4.4,3.4)
+        elseif nl:match("leg") or nl:match("arm") then part.Size = Vector3.new(2.6,4.8,2.6)
+        elseif nl == "head" then part.Size = Vector3.new(2.2,2.2,2.2); local m = part:FindFirstChildOfClass("SpecialMesh"); if m then m.Parent = nil end end
+    end
+    for joint, saved in pairs(data.joints) do
+        local jn = joint.Name:lower(); local c0 = saved.C0
+        if jn:match("rightshoulder") or jn:match("right shoulder") then joint.C0 = c0 * CFrame.new(2.4,0.6,0)
+        elseif jn:match("leftshoulder") or jn:match("left shoulder") then joint.C0 = c0 * CFrame.new(-2.4,0.6,0)
+        elseif jn:match("righthip") or jn:match("right hip") then joint.C0 = c0 * CFrame.new(0.9,-0.6,0)
+        elseif jn:match("lefthip") or jn:match("left hip") then joint.C0 = c0 * CFrame.new(-0.9,-0.6,0)
+        elseif jn:match("neck") then joint.C0 = c0 * CFrame.new(0,0.8,0) end
+    end
+end
+local function saveBigSkinOriginal(char)
+    local data = { parts = {}, accessories = {}, joints = {} }
+    for _, item in pairs(char:GetDescendants()) do
+        if item:IsA("Accessory") or item:IsA("Clothing") or item:IsA("ShirtGraphic") or item:IsA("Decal") then data.accessories[item] = {Parent = item.Parent}
+        elseif item:IsA("BasePart") and item.Name ~= "HumanoidRootPart" then
+            local saved = {Size = item.Size, Color = item.Color, Material = item.Material, TextureID = item:IsA("MeshPart") and item.TextureID or nil}
+            if item.Name == "Head" then local m = item:FindFirstChildOfClass("SpecialMesh"); if m then saved.MeshParent = m.Parent end end
+            data.parts[item] = saved
+        elseif item:IsA("Motor6D") and item.Part0 and item.Part1 then data.joints[item] = {C0 = item.C0, C1 = item.C1} end
+    end
+    bigSkinBugOriginal[char] = data
+end
+local function restoreBigSkin(char)
+    local data = bigSkinBugOriginal[char]; if not data then return end
+    for item, saved in pairs(data.accessories) do if saved.Parent then item.Parent = saved.Parent end end
+    for part, saved in pairs(data.parts) do
+        part.Size = saved.Size; part.Color = saved.Color; part.Material = saved.Material
+        if saved.TextureID and part:IsA("MeshPart") then part.TextureID = saved.TextureID end
+        if saved.MeshParent and part.Name == "Head" then
+            local m = part:FindFirstChildOfClass("SpecialMesh")
+            if not m and saved.MeshParent ~= part then local om = saved.MeshParent:FindFirstChildOfClass("SpecialMesh"); if om then om.Parent = part end end
+        end
+    end
+    for joint, saved in pairs(data.joints) do joint.C0 = saved.C0; joint.C1 = saved.C1 end
+    bigSkinBugOriginal[char] = nil
+end
+local function onCharAddedBigSkin(char)
+    if not bigSkinBugEnabled then return end
+    task.wait(0.4); saveBigSkinOriginal(char); applyBigSkin(char)
+end
+local function enableBigSkin()
+    if bigSkinBugEnabled then return end
+    bigSkinBugEnabled = true
+    if lp.Character then saveBigSkinOriginal(lp.Character); applyBigSkin(lp.Character) end
+    bigSkinBugConnections.CharAdded = lp.CharacterAdded:Connect(onCharAddedBigSkin)
+end
+local function disableBigSkin()
+    bigSkinBugEnabled = false
+    if bigSkinBugConnections.CharAdded then bigSkinBugConnections.CharAdded:Disconnect(); bigSkinBugConnections.CharAdded = nil end
+    if lp.Character then restoreBigSkin(lp.Character) end
+end
+
+-- ==================== ESP MODULE ====================
+local ESPModule = (function()
+    local module = {}
+    local ESPEnabled = false
+    local ShowBox, ShowName, ShowDistance, ShowHealth, ShowLine = true, true, true, true, true
+    local BoxColor, TextColor, LineColor = "Red", "White", "Red"
+    local ShowAllPlayers = false; local LineOrigin = "Player"
+    local drawings = {}
+    local function clearDrawings() for _, d in pairs(drawings) do pcall(function() d:Remove() end) end drawings = {} end
+    local function getColor(name)
+        local colors = {Red=Color3.new(1,0,0),Green=Color3.new(0,1,0),Blue=Color3.new(0,0,1),Yellow=Color3.new(1,1,0),White=Color3.new(1,1,1),Black=Color3.new(0,0,0),Cyan=Color3.new(0,1,1),Magenta=Color3.new(1,0,1)}
+        return colors[name] or Color3.new(1,1,1)
+    end
+    local function isEnemy(plr)
+        if plr == lp then return false end
+        if ShowAllPlayers then return true end
+        local mt, tt = lp.Team, plr.Team
+        if mt and tt then
+            if mt.Name=="Pirates" and tt.Name=="Marines" then return true
+            elseif mt.Name=="Marines" and tt.Name=="Pirates" then return true end
+            if mt.Name=="Pirates" and tt.Name=="Pirates" then return true end
+            if mt.Name=="Marines" and tt.Name=="Marines" then return false end
+        end
+        return true
+    end
+    local function updateESP()
+        clearDrawings()
+        if not ESPEnabled then return end
+        local myHrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+        local vp = camera.ViewportSize
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr == lp or not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then continue end
+            if not isEnemy(plr) then continue end
+            local hrp = plr.Character.HumanoidRootPart
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then continue end
+            local pos, onScreen = camera:WorldToViewportPoint(hrp.Position)
+            local sp = Vector2.new(pos.X, pos.Y); local vis = onScreen; local lineEnd = sp
+            if pos.Z < 0 then
+                local center = Vector2.new(vp.X/2, vp.Y/2); local dir = (center - sp).Unit
+                local maxX, maxY = (vp.X/2)-5, (vp.Y/2)-5; local t = 1
+                if math.abs(dir.X)>0.001 and math.abs(dir.Y)>0.001 then t = math.min(math.abs(maxX/dir.X), math.abs(maxY/dir.Y))
+                elseif math.abs(dir.X)>0.001 then t = math.abs(maxX/dir.X)
+                elseif math.abs(dir.Y)>0.001 then t = math.abs(maxY/dir.Y) end
+                lineEnd = center + dir * t
+            end
+            if ShowBox and vis then
+                local sz = Vector2.new(2000/(camera.CFrame.Position-hrp.Position).Magnitude, 4000/(camera.CFrame.Position-hrp.Position).Magnitude)
+                local tl = Vector2.new(pos.X-sz.X/2, pos.Y-sz.Y/2); local tr = Vector2.new(pos.X+sz.X/2, pos.Y-sz.Y/2)
+                local bl = Vector2.new(pos.X-sz.X/2, pos.Y+sz.Y/2); local br = Vector2.new(pos.X+sz.X/2, pos.Y+sz.Y/2)
+                local cc = getColor(BoxColor)
+                local function addL(a,b) local l=Drawing.new("Line"); l.Visible=true; l.Color=cc; l.Thickness=1; l.From=a; l.To=b; table.insert(drawings,l) end
+                addL(tl,tr); addL(tr,br); addL(br,bl); addL(bl,tl)
+            end
+            if ShowName and vis then
+                local sz = Vector2.new(2000/(camera.CFrame.Position-hrp.Position).Magnitude, 4000/(camera.CFrame.Position-hrp.Position).Magnitude)
+                local t=Drawing.new("Text"); t.Visible=true; t.Text=plr.Name; t.Color=getColor(TextColor); t.Size=13; t.Center=true; t.Position=Vector2.new(pos.X, pos.Y-sz.Y/2-15); t.Font=2; table.insert(drawings,t)
+            end
+            if ShowDistance and vis then
+                local dist = math.floor((hrp.Position-(myHrp and myHrp.Position or Vector3.zero)).Magnitude)
+                local t=Drawing.new("Text"); t.Visible=true; t.Text=dist.."m"; t.Color=getColor(TextColor); t.Size=13; t.Center=true; t.Position=Vector2.new(pos.X, pos.Y+sz.Y/2+2); t.Font=2; table.insert(drawings,t)
+            end
+            if ShowHealth and vis then
+                local sz = Vector2.new(2000/(camera.CFrame.Position-hrp.Position).Magnitude, 4000/(camera.CFrame.Position-hrp.Position).Magnitude)
+                local r = math.clamp(hum.Health/hum.MaxHealth,0,1); local bp = Vector2.new(pos.X-sz.X/2, pos.Y+sz.Y/2+12)
+                local bg=Drawing.new("Square"); bg.Visible=true; bg.Color=Color3.new(0,0,0); bg.Filled=true; bg.Size=Vector2.new(sz.X,4); bg.Position=bp; table.insert(drawings,bg)
+                local fg=Drawing.new("Square"); fg.Visible=true; fg.Color=Color3.new(1-r,r,0); fg.Filled=true; fg.Size=Vector2.new(sz.X*r,4); fg.Position=bp; table.insert(drawings,fg)
+            end
+            if ShowLine then
+                local st = nil
+                if LineOrigin == "Player" then
+                    if myHrp then local mp, mo = camera:WorldToViewportPoint(myHrp.Position); if mo then st = Vector2.new(mp.X, mp.Y) else st = Vector2.new(vp.X/2, vp.Y/2) end
+                    else st = Vector2.new(vp.X/2, vp.Y/2) end
+                elseif LineOrigin == "Center" then st = Vector2.new(vp.X/2, vp.Y/2)
+                elseif LineOrigin == "Top" then st = Vector2.new(vp.X/2, 0) end
+                if st then local l=Drawing.new("Line"); l.Visible=true; l.Color=getColor(LineColor); l.Thickness=1; l.From=st; l.To=lineEnd; table.insert(drawings,l) end
+            end
+        end
+    end
+    local espConnection
+    function module:SetESPEnabled(state) ESPEnabled=state; if state then if espConnection then espConnection:Disconnect() end espConnection=RunService.RenderStepped:Connect(updateESP) else if espConnection then espConnection:Disconnect(); espConnection=nil end clearDrawings() end end
+    function module:SetShowBox(v) ShowBox=v end
+    function module:SetShowName(v) ShowName=v end
+    function module:SetShowDistance(v) ShowDistance=v end
+    function module:SetShowHealth(v) ShowHealth=v end
+    function module:SetShowLine(v) ShowLine=v end
+    function module:SetBoxColor(c) BoxColor=c end
+    function module:SetTextColor(c) TextColor=c end
+    function module:SetLineColor(c) LineColor=c end
+    function module:SetShowAllPlayers(v) ShowAllPlayers=v end
+    function module:SetLineOrigin(v) LineOrigin=v end
+    return module
+end)()
+
+-- ==================== M1 EXTENDER ====================
+local M1Extender = (function()
+    local M = {}; local active = false; local maxRange = 100
+    local Net = RS:WaitForChild("Modules"):WaitForChild("Net")
+    local RegisterHit = Net["RE/RegisterHit"]; local RegisterAttack = Net["RE/RegisterAttack"]
+    local function getTarget()
+        local myChar = lp.Character; local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart"); if not myRoot then return nil end
+        local target, sd = nil, maxRange
+        for _, folder in pairs({workspace:FindFirstChild("Enemies"), workspace:FindFirstChild("Characters")}) do
+            if folder then for _, v in pairs(folder:GetChildren()) do
+                local eRoot = v:FindFirstChild("HumanoidRootPart"); local eHum = v:FindFirstChildOfClass("Humanoid")
+                if v ~= myChar and eRoot and eHum and eHum.Health > 0 then
+                    local d = (eRoot.Position - myRoot.Position).Magnitude
+                    if d < sd then sd = d; target = v end
+                end
+            end end
+        end
+        return target
+    end
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if processed or not active then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            local target = getTarget(); local tool = lp.Character and lp.Character:FindFirstChildOfClass("Tool")
+            if target and tool then
+                local head = target:FindFirstChild("Head") or target:FindFirstChild("HumanoidRootPart")
+                if head then
+                    local sid = tostring(lp.UserId):sub(2,4) .. tostring(coroutine.running()):sub(11,15)
+                    pcall(function()
+                        RegisterAttack:FireServer()
+                        local hd = {}; for _, p in pairs(target:GetChildren()) do if p:IsA("BasePart") then table.insert(hd, {target, p}) end end
+                        RegisterHit:FireServer(head, hd, {}, sid)
+                    end)
+                end
+            end
+        end
+    end)
+    function M:Toggle(v) active = v end
+    function M:SetRange(v) maxRange = v end
+    return M
+end)()
+
+-- ==================== GUN CLICK SL ====================
+local GunClickSL = (function()
+    local enabled = false; local aimPos = nil; local hookInstalled = false
+    local function getClosestTarget()
+        local char = lp.Character; if not char then return nil end
+        local root = char:FindFirstChild("HumanoidRootPart"); if not root then return nil end
+        local closest, dist = nil, math.huge; local myPos = root.Position
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= lp and player.Character then
+                local tp = player.Character:FindFirstChild("HumanoidRootPart")
+                if tp then
+                    local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                    if not hum or hum.Health > 0 then
+                        local d = (tp.Position - myPos).Magnitude
+                        if d < dist then dist = d; closest = tp end
+                    end
+                end
+            end
+        end
+        return closest
+    end
+    local function installHook()
+        if hookInstalled then return end
+        hookInstalled = true
+        local mt = getrawmetatable(game); local o = mt.__namecall
+        setreadonly(mt, false)
+        mt.__namecall = newcclosure(function(self, ...)
+            local args = {...}; local m = getnamecallmethod()
+            if enabled and aimPos and m == "FireServer" then
+                local rn = tostring(self.Name or self)
+                if rn:find("ShootGunEvent") then
+                    if typeof(args[1]) == "Vector3" then args[1] = aimPos.Position end
+                    if typeof(args[2]) == "table" then args[2] = { [1] = aimPos } end
+                end
+            end
+            return o(self, unpack(args))
+        end)
+        setreadonly(mt, true)
+    end
+    local function startLoop() task.spawn(function() while enabled do aimPos = getClosestTarget(); task.wait(0.05) end end) end
+    local M = {}
+    function M:SetEnabled(state)
+        if state == enabled then return end
+        enabled = state
+        if state then aimPos = nil; installHook(); startLoop() else aimPos = nil end
+    end
+    return M
+end)()-- ==================== SILENT AIM MODULE ====================
 SilentAimModule = (function()
     local module = {}
     local Players = game:GetService("Players")
@@ -1175,7 +1584,6 @@ SilentAimModule = (function()
                 if tp and Mouse then
                     local cf = CFrame.new(tp)
                     pcall(function() Mouse.Hit = cf; Mouse.Target = nil end)
-                    if MouseModule then pcall(function() local MD = require(MouseModule); MD.Hit = cf; MD.Target = nil end) end
                 end
             end)
         end
@@ -1280,9 +1688,7 @@ SilentAimModule = (function()
     function module:SetSoruShowFOVCircle(s) SoruShowFOVCircle=s end
     function module:GetTargetPos() return PlayersPosition or NPCPosition end
     return module
-end)()
-
--- ==================== UI TABS ====================
+end)()-- ==================== UI TABS ====================
 local MacroTab = Tabs.Macro
 local MacroLeft = MacroTab:AddLeftGroupbox("Automation")
 MacroLeft:AddToggle("AHKSoru", {Text="Enable AHK Soru", Default=false, Callback=function(v) if v then LoadAHKsoru() else UnloadAHKsoru() end end})
@@ -1307,28 +1713,24 @@ DTalonGroup:AddToggle("DTalonToggle", {Text="Enable DTalon", Default=false, Call
 DTalonGroup:AddSlider("DTalonPower", {Text="Power", Default=400, Min=100, Max=5000, Rounding=0, Suffix=" force", Callback=function(v) dtalonPower=v end})
 DTalonGroup:AddSlider("DTalonDuration", {Text="Duration (cs)", Default=90, Min=10, Max=200, Rounding=0, Suffix=" cs", Callback=function(v) dtalonDuration=v/100 end})
 DTalonGroup:AddSlider("DTalonCharge", {Text="Min Charge", Default=10, Min=1, Max=50, Rounding=0, Callback=function(v) dtalonRequiredCharge=v/10 end})
-GlitchTab:AddLeftGroupbox("Big Skin Bug"):AddToggle("BigSkinToggle", {Text="Enable Big Skin Bug", Default=false, Callback=function(v) if v then enableBigSkin() else disableBig GlitchTab:AddLeftGroupbox("Big Skin Bug"):AddToggle("BigSkinToggle", {Text="Enable Big Skin Bug", Default=false, Callback=function(v) if v then enableBigSkin() else disableBigSkin() end end})
-
+GlitchTab:AddLeftGroupbox("Big Skin Bug"):AddToggle("BigSkinToggle", {Text="Enable Big Skin Bug", Default=false, Callback=function(v) if v then enableBigSkin() else disableBigSkin() end end})
 local DiamondGroup = GlitchTab:AddRightGroupbox("Diamond Boost")
 DiamondGroup:AddToggle("DiamondToggle", {Text="Enable Diamond", Default=false, Callback=function(v) diamondEnabled=v; if not v then diamondCharging=false; diamondChargeStart=0 end end})
 DiamondGroup:AddSlider("DiamondPower", {Text="Power", Default=250, Min=100, Max=5000, Rounding=0, Suffix=" force", Callback=function(v) diamondPower=v end})
 DiamondGroup:AddSlider("DiamondDuration", {Text="Duration (cs)", Default=30, Min=10, Max=200, Rounding=0, Suffix=" cs", Callback=function(v) diamondDuration=v/100 end})
 DiamondGroup:AddSlider("DiamondCharge", {Text="Min Charge", Default=10, Min=1, Max=50, Rounding=0, Callback=function(v) diamondRequiredCharge=v/10 end})
-
 local EClawGroup = GlitchTab:AddRightGroupbox("EClaw X Boost")
 EClawGroup:AddToggle("EClawToggle", {Text="Enable EClaw Boost", Default=false, Callback=function(v) EClawBoost:Toggle(v) end})
 EClawGroup:AddSlider("EClawPower", {Text="Power", Default=400, Min=100, Max=5000, Rounding=0, Suffix=" force", Callback=function(v) EClawBoost:SetPower(v) end})
 EClawGroup:AddSlider("EClawDuration", {Text="Duration (cs)", Default=170, Min=10, Max=200, Rounding=0, Suffix=" cs", Callback=function(v) EClawBoost:SetDuration(v/100) end})
 EClawGroup:AddSlider("EClawCharge", {Text="Min Charge", Default=0, Min=0, Max=50, Rounding=0, Callback=function(v) EClawBoost:SetRequiredCharge(v/10) end})
 
--- Movement Tab
 local MoveTab = Tabs.Movement
 MoveTab:AddLeftGroupbox("Player Movement"):AddToggle("BunnyHopToggle", {Text="Bunny Hop", Default=false, Callback=function(v) bunnyHopEnabled=v end})
 local SuperJumpGroup = MoveTab:AddLeftGroupbox("Super Jump")
 SuperJumpGroup:AddToggle("SuperJumpToggle", {Text="Enable Super Jump", Default=false, Callback=function(v) superJumpEnabled=v; updateSuperJumpState(); if not v then resetSuperJumpToNormal(); if superJumpButton then destroySuperJumpButton() end end end})
 SuperJumpGroup:AddDropdown("SuperJumpMode", {Values={"V1","V2","V3"}, Default="V1", Text="", Callback=function(v) superJumpMode=v; updateSuperJumpState() end})
 SuperJumpGroup:AddSlider("SuperJumpPower", {Text="Jump Power", Default=150, Min=50, Max=500, Rounding=0, Callback=function(v) superJumpPower=v; if superJumpEnabled and superJumpMode=="V1" then applySuperJumpV1() end end})
-
 local DashLengthGroup = MoveTab:AddRightGroupbox("Dash Length")
 DashLengthGroup:AddToggle("DashToggle", {Text="Enable Dash Length", Default=false, Callback=function(v)
     dashLengthEnabled=v
@@ -1352,18 +1754,15 @@ DashLengthGroup:AddToggle("DashToggle", {Text="Enable Dash Length", Default=fals
     end
 end})
 DashLengthGroup:AddSlider("DashLengthValue", {Text="Dash Distance", Default=1, Min=1, Max=300, Rounding=0, Callback=function(v) dashLengthValue=v end})
-
 local SpeedGroup = MoveTab:AddLeftGroupbox("Speed Hack")
 SpeedGroup:AddToggle("SpeedHackToggle", {Text="Enable Speed Hack", Default=false, Callback=function(v) if v then StartSpeedHack(); CreateSpeedMiniToggle() else StopSpeedHack(); DestroySpeedMiniToggle() end end})
 SpeedGroup:AddDropdown("SpeedMode", {Values={"WalkSpeed","CFrame","Velocity","TP-Flash","AnimSpeed"}, Default="WalkSpeed", Text="Mode", Callback=function(v) speedSettings.mode=v end})
 SpeedGroup:AddSlider("SpeedHackValue", {Text="Speed Value", Default=50, Min=16, Max=500, Rounding=0, Callback=function(v) speedSettings.speedValue=v end})
-
 local FlyGroup = MoveTab:AddRightGroupbox("Fly")
 FlyGroup:AddToggle("FlyToggle", {Text="Toggle Fly", Default=false, Callback=function(v) if v then StartFly(); CreateFlyMiniToggle() else StopFly(); DestroyFlyMiniToggle() end; flySettings.flyActive=v end})
 FlyGroup:AddDropdown("FlyMode", {Values={"CFrame","Velocity"}, Default="CFrame", Text="Mode", Callback=function(v) flySettings.mode=v; if flySettings.flyActive then StopFly(); StartFly() end end})
 FlyGroup:AddSlider("FlySpeed", {Text="Speed", Default=50, Min=10, Max=500, Rounding=0, Callback=function(v) flySettings.speed=v end})
 FlyGroup:AddToggle("NoClipToggle", {Text="NoClip", Default=false, Callback=function(v) flySettings.noclipActive=v; if v then StartNoClip() else StopNoClip() end end})
-
 local DashGlitchGroup = MoveTab:AddRightGroupbox("Skull Guitar Dash")
 DashGlitchGroup:AddToggle("DashGlitchToggle", {Text="Enable Dash Glitch", Default=false, Callback=function(v) DashGlitch:SetEnabled(v) end})
 DashGlitchGroup:AddDropdown("DashGlitchVersion", {Values={"V1 (Auto)","V2 (Manual Tap)"}, Default="V1 (Auto)", Text="Version", Callback=function(v) DashGlitch:SetVersion(v:match("^(%w+)")) end})
@@ -1371,10 +1770,8 @@ DashGlitchGroup:AddSlider("DashGlitchCooldown", {Text="Cooldown", Default=1.5, M
 DashGlitchGroup:AddSlider("DashGlitchDashLength", {Text="Dash Length", Default=190, Min=10, Max=500, Rounding=0, Callback=function(v) DashGlitch:SetDashLength(v) end})
 DashGlitchGroup:AddSlider("DashGlitchSpeedBoost", {Text="Propulsion", Default=350, Min=50, Max=1000, Rounding=0, Callback=function(v) DashGlitch:SetSpeedBoost(v) end})
 DashGlitchGroup:AddSlider("DashGlitchAirSpeed", {Text="Air Speed", Default=400, Min=50, Max=1000, Rounding=0, Callback=function(v) DashGlitch:SetAirWalkSpeed(v) end})
-
 lp.CharacterAdded:Connect(function(char) if dashLengthEnabled then task.wait(0.1); char:SetAttribute("DashLength", dashLengthValue); char:SetAttribute("DashLengthAir", dashLengthValue) end end)
 
--- Appearance
 local ApparenceTab = Tabs.Apparence
 local HeadlessGroup = ApparenceTab:AddLeftGroupbox("Fake Headless")
 HeadlessGroup:AddDropdown("HeadlessVersion", {Values={"V1","V2"}, Default="V1", Text="Version", Callback=function(v) fakeHeadlessVersion=v; if fakeHeadlessEnabled then removeFakeHeadless(); applyFakeHeadless() end end})
@@ -1383,7 +1780,6 @@ local KorbloxGroup = ApparenceTab:AddRightGroupbox("Fake Korblox")
 KorbloxGroup:AddDropdown("KorbloxVersion", {Values={"V1","V2"}, Default="V1", Text="Version", Callback=function(v) fakeKorbloxVersion=v; if fakeKorbloxEnabled then removeFakeKorblox(); applyFakeKorblox() end end})
 KorbloxGroup:AddToggle("KorbloxToggle", {Text="Enable Fake Korblox", Default=false, Callback=function(v) fakeKorbloxEnabled=v; if v then applyFakeKorblox() else removeFakeKorblox() end end})
 
--- Misc
 local MiscTab = Tabs.Misc
 local FontChangerGroup = MiscTab:AddLeftGroupbox("Font Changer")
 local fontList = {}
@@ -1401,7 +1797,6 @@ end
 FontChangerGroup:AddDropdown("FontStyle", {Values=fontList, Default="GothamSsm", Text="Font Style", Callback=function(v) fontPreset=v; if fontChangerEnabled then disableFonts(); enableFonts() end end})
 FontChangerGroup:AddDropdown("CustomFontFile", {Values=getCustomFonts(), Default="None", Text="Custom Font", Callback=function(val) loadCustomFont(val); if fontChangerEnabled then disableFonts(); enableFonts() end end})
 FontChangerGroup:AddToggle("FontChangerToggle", {Text="Enable Font Changer", Default=false, Callback=function(v) fontChangerEnabled=v; if v then enableFonts() else disableFonts() end end})
-
 local AntiMoverGroup = MiscTab:AddRightGroupbox("Anti Mover")
 AntiMoverGroup:AddToggle("AntiMoverToggle", {Text="Enable Anti Mover", Default=false, Callback=function(v)
     antiMoverEnabled=v
@@ -1414,7 +1809,6 @@ AntiMoverGroup:AddToggle("AntiMoverToggle", {Text="Enable Anti Mover", Default=f
         if lp.Character and lp.Character:FindFirstChild("AntiMover") then lp.Character.AntiMover:Destroy() end
     end
 end})
-
 local UnbreakableGroup = MiscTab:AddRightGroupbox("Unbreakable")
 UnbreakableGroup:AddToggle("UnbreakableToggle", {Text="Enable Unbreakable", Default=false, Callback=function(v)
     unbreakableEnabled=v
@@ -1428,13 +1822,11 @@ UnbreakableGroup:AddToggle("UnbreakableToggle", {Text="Enable Unbreakable", Defa
         if lp.Character then lp.Character:SetAttribute("UnbreakableAll", false) end
     end
 end})
-
 MiscTab:AddRightGroupbox("No GFX"):AddDropdown("NoGFXMode", {Values={"Off","V1","V2"}, Default="Off", Text="No GFX Mode", Callback=function(v) setNoGfxMode(v) end})
 MiscTab:AddLeftGroupbox("Delete Ship"):AddToggle("DeleteShipToggle", {Text="Enable Delete Ship", Default=false, Callback=function(v) deleteShipActive=v; if v then startDeleteShipLoop() end end})
 MiscTab:AddLeftGroupbox("Walk on Water"):AddToggle("WalkOnWaterToggle", {Text="Enable Walk on Water", Default=false, Callback=function(v) WalkOnWaterEnabled=v end})
 MiscTab:AddLeftGroupbox("Anti Lava"):AddToggle("AntiLavaToggle", {Text="Enable Anti Lava", Default=false, Callback=function(v) antiLavaActive=v; if v then startAntiLava() else stopAntiLava() end end})
 
--- ESP
 local ESPTab = Tabs.ESP
 local ESPGroup = ESPTab:AddLeftGroupbox("ESP Settings")
 local ESPVisualGroup = ESPTab:AddRightGroupbox("ESP Appearance")
@@ -1450,7 +1842,6 @@ ESPVisualGroup:AddDropdown("BoxColor", {Values={"Red","Green","Blue","Yellow","W
 ESPVisualGroup:AddDropdown("TextColor", {Values={"Red","Green","Blue","Yellow","White","Cyan","Magenta"}, Default="White", Text="Text Color", Callback=function(v) ESPModule:SetTextColor(v) end})
 ESPVisualGroup:AddDropdown("LineColor", {Values={"Red","Green","Blue","Yellow","White","Cyan","Magenta"}, Default="Red", Text="Line Color", Callback=function(v) ESPModule:SetLineColor(v) end})
 
--- Silent Aim
 local SA = Tabs.SilentAim
 local MainGroup = SA:AddLeftGroupbox("Main")
 MainGroup:AddToggle("EnablePlayerAim", {Text="Player Silent Aim", Default=false, Callback=function(v) SilentAimModule:SetPlayerSilentAim(v) end})
@@ -1479,7 +1870,6 @@ OptionsGroup:AddSlider("MaxRange", {Text="Max Range", Default=1000, Min=100, Max
 OptionsGroup:AddToggle("EnableTracer", {Text="Enable Tracer", Default=false, Callback=function(v) SilentAimModule:SetTracerEnabled(v) end})
 OptionsGroup:AddDropdown("TracerColor", {Values={"Red","Green","Blue","Yellow","White"}, Default="Red", Text="Tracer Color", Callback=function(v) SilentAimModule:SetTracerColor(v) end})
 
--- SA Blacklist
 local BLTab = Tabs.SABlacklist
 local BLLeft = BLTab:AddLeftGroupbox("Blacklist Melee & Fruit")
 local BLRight = BLTab:AddRightGroupbox("Blacklist Swords & Guns")
@@ -1492,7 +1882,6 @@ for _,k in ipairs({"Z","X"}) do BLRight:AddToggle("B_Sword_"..k, {Text="Sword: "
 BLRight:AddLabel("--- GUNS ---")
 for _,k in ipairs({"Z","X"}) do BLRight:AddToggle("B_Gun_"..k, {Text="Gun: "..k, Default=false, Callback=function(v) SilentAimModule:SetBlacklistKey("Gun", k, v) end}) end
 
--- Settings
 local function closeTheScript()
     _G.NamelessLoaded = false
     _G.NamelessAHKRunning = nil
@@ -1535,7 +1924,6 @@ for _,cat in ipairs({"Melee","Sword","Fruit","Gun"}) do
     end
 end
 
--- Chat commands
 local function onChatted(msg)
     local ml = msg:lower()
     if not ml:match("^/e%s+") then return end
